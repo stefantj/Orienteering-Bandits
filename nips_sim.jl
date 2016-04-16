@@ -64,7 +64,64 @@ function initialize_lattice_problem(pts_dim)
     n_s = 1;
     n_t = num_pts;
     # Initialize prior
-    prior = GPR.GaussianProcess( 0.1, GPR.SquaredExponential(.44))
+    prior = GPR.GaussianProcess( 0.1, GPR.SquaredExponential(1/pts_dim))
+
+    if( GPR.covar(prior.kernel, 0., 1/(pts_dim-1)) > 0.9)
+        warn("Likely unstable covariance matrix: Try adjusting the bandwidth to be smaller");
+    end
+
+    weights = zeros(num_pts);
+    optimal_path = zeros(2);
+
+    return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, optimal_path)
+end
+
+function initialize_trench_problem(pts_dim)
+
+    width=3;
+    num_pts = int(pts_dim*width)
+    G = simple_graph(num_pts);
+    edge_index = 0;
+    node_index = 0;
+    locs_x = linspace(0,1,pts_dim);
+    locs_y = linspace(0,1,width);
+
+    locations = zeros(num_pts,2);
+
+    for i = 1:pts_dim
+        for j = 1:width
+            node_index +=1
+            locations[node_index,:] = [locs_x[i] locs_x[j]];
+            if(j < width)
+                edge_index+=1;
+                add_edge!(G, Edge(edge_index, node_index, node_index+1))
+            end
+            if(i < pts_dim)
+                edge_index+=1;
+                add_edge!(G, Edge(edge_index, node_index, node_index+width))
+            end
+        end
+    end
+
+    # Budget doesn't really matter for a lattice problem.
+    B = 2.19999;
+    distances = 2*B*ones(num_pts,num_pts);
+    for E in G.edges
+        distances[E.source, E.target] = norm(locations[E.source,:] - locations[E.target,:]);
+        if(!G.is_directed)
+            distances[E.target,E.source] = distances[E.source, E.target]
+        end
+    end
+
+    # Traverse diagonally
+    n_s = 1;
+    n_t = num_pts;
+    # Initialize prior
+    prior = GPR.GaussianProcess( 0.1, GPR.SquaredExponential(1/pts_dim))
+
+    if( GPR.covar(prior.kernel, 0., 1/(pts_dim-1)) > 0.9)
+        warn("Likely unstable covariance matrix: Try adjusting the bandwidth to be smaller");
+    end
 
     weights = zeros(num_pts);
     optimal_path = zeros(2);
@@ -148,13 +205,16 @@ function OP3_Bandit(problem::BanditProblem, T::Int64)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
     regret = ones(T)*sum(problem.weights[problem.optimal_path])
     for t = 1:T
+        beta_t = sqrt(2*log(t^2*N*(pi^2)/0.6))
         # Plan action:
         ucb = zeros(N);
         for i = 1:N
             mean,var = GPR.predict(posterior, problem.locations[i,:]');
             ucb[i] = mean
             if(!isnan(var))
-                ucb[i] += sqrt(var);
+                ucb[i] += beta_t*sqrt(var);
+            else
+                ucb[i] += sqrt(2);
             end
         end
         path = solve_OP(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop)
@@ -176,12 +236,26 @@ function OP2_Bandit(problem::BanditProblem, T::Int64)
     for t = 1:T
         budget_left = problem.budget
         path_taken = [problem.n_start];
+        k = 1;
         while(path_taken[end] != problem.n_stop)
             # Update with sample at current location
             GPR.update(posterior, problem.locations[path_taken[end],:]', problem.weights[path_taken[end]] + sqrt(problem.prior.noise)*randn())
             # Plan action:
-            means = GPR.predict_mean(posterior, problem.locations');
-            path = solve_OP(means, problem.distances, budget_left, path_taken[end], problem.n_stop)
+            k+=1;
+            ucb = zeros(N);
+            beta_tk = sqrt(2*log( (t)^2 * N * (pi^2) / 0.6))
+
+            for i=1:N
+                mean,var = GPR.predict(posterior, problem.locations[i,:]')
+                ucb[i] = mean;
+                if(!isnan(var))
+                    ucb[i] += beta_tk*sqrt(var)
+                else
+                    ucb[i] += sqrt(2);
+                end
+            end
+#            means = GPR.predict_mean(posterior, problem.locations');
+            path = solve_OP(ucb, problem.distances, budget_left, path_taken[end], problem.n_stop)
             # In case of failure, see if we can finish the path manually and break.
             if(length(path) == 0) 
                 if(path_taken[end] != problem.n_stop)
@@ -263,6 +337,55 @@ function PS2_Bandit(problem::BanditProblem, T::Int64)
     return regret
 end
 
+# Used to return (x,y,z) locations of an example problem
+function sample_prior(PROBLEM_SIZE)
+    problem_data = initialize_lattice_problem(PROBLEM_SIZE)
+    prior = GPR.GaussianProcessEstimate(problem_data.prior,2)
+    data = vec(GPR.sample_n(prior, problem_data.locations));
+
+    return problem_data.locations[:,1], problem_data.locations[:,2], data
+end
+
+# Test sensitivy for different problem scales
+
+function prior_sensitivity(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
+    problem_data = initialize_lattice_problem(PROBLEM_SIZE);
+    ell_values = linspace(0.01,1,100);
+    rT = zeros(3,length(ell_values))
+
+    ell_iter = 0;
+    for ell in ell_values
+        ell_iter+=1;
+
+        print("L = $ell: ");
+        problem_data.prior.kernel = GPR.SquaredExponential(ell);
+        prior = GPR.GaussianProcessEstimate(problem_data.prior, 2);
+        # Test that our matrix will be well conditioned:
+        if( GPR.covar(problem_data.prior.kernel, 0., 1/(PROBLEM_SIZE-1)) < 0.9)
+            for iteration = 1:NUM_ITERS
+                println("==== ITER $iteration ====");
+                problem_data.weights = vec(GPR.sample_n(prior, problem_data.locations'));
+                problem_data.optimal_path = solve_OP(problem_data.weights, problem_data.distances, problem_data.budget, problem_data.n_start, problem_data.n_stop);
+                s_OP = @spawn OP_Bandit(problem_data, T_HORIZON)
+                s_OP3 = @spawn OP3_Bandit(problem_data, T_HORIZON)
+                s_PS = @spawn PS_Bandit(problem_data, T_HORIZON)
+
+                r_OP = fetch(s_OP)
+                r_OP3 = fetch(s_OP3)
+                r_PS = fetch(s_PS)
+
+                rT[1,ell_iter] += sum(r_OP)/NUM_ITERS
+                rT[2,ell_iter] += sum(r_OP3)/NUM_ITERS
+                rT[3,ell_iter] += sum(r_PS)/NUM_ITERS
+            end
+        else
+            println("Skipped");
+        end
+    end
+    return ell_values, rT
+end
+
+
 
 # Test:
 #  OP hueristic with updates
@@ -271,6 +394,56 @@ end
 function Bayesian_regret(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
 
     problem_data = initialize_lattice_problem(PROBLEM_SIZE)
+    Average_Regret = zeros(4, T_HORIZON)
+    Squared_Regret = zeros(4, T_HORIZON)
+
+    prior = GPR.GaussianProcessEstimate(problem_data.prior,2);
+    for iteration = 1:NUM_ITERS
+        println("==== ITER $iteration ====");
+        # Sample function from the prior:
+        # Consider having this be a separate vector, then problem_data can be immutable (possible speed-up?)
+        problem_data.weights = vec(GPR.sample_n(prior, problem_data.locations'))
+        problem_data.optimal_path = solve_OP(problem_data.weights, problem_data.distances, problem_data.budget, problem_data.n_start, problem_data.n_stop);
+
+    # TODO: Implement each learner on a separate process.
+        # Orienteering problem w/o replanning:
+        #s_OP = @spawn OP_Bandit(problem_data, T_HORIZON);
+
+        # Orienteering problem w/replanning:
+        S_OP = @spawn OP2_Bandit(problem_data, T_HORIZON)
+
+        # Orienteering problem w/UCB:
+        s_OP3 = @spawn OP3_Bandit(problem_data, T_HORIZON);
+
+        # Posterior sampling w/o replanning:
+        s_PS = @spawn PS_Bandit(problem_data, T_HORIZON);
+
+        # Posterior sampling w/replanning:
+#        r_ps2_learner = @spawn PS2_Bandit(problem_data,T_HORIZON);
+
+        # Record results:
+        r_op_learner = fetch(s_OP)
+        r_op3_learner = fetch(s_OP3)
+        r_ps_learner = fetch(s_PS)
+
+        Average_Regret[1,:] += (r_op_learner./NUM_ITERS)'
+        Squared_Regret[1,:] += ((r_op_learner.^2)./NUM_ITERS)'
+        #Average_Regret[2,:] += (r_op2_learner./NUM_ITERS)'
+        #Squared_Regret[2,:] += ((r_op2_learner.^2)./NUM_ITERS)'
+        Average_Regret[2,:] += (r_op3_learner./NUM_ITERS)'
+        Squared_Regret[2,:] += ((r_op3_learner.^2)./NUM_ITERS)'
+        Average_Regret[3,:] += (r_ps_learner./NUM_ITERS)'
+        Squared_Regret[3,:] += ((r_ps_learner.^2)./NUM_ITERS)'
+#        Average_Regret[4,:] += (r_ps2_learner./NUM_ITERS)'
+#        Squared_Regret[4,:] += (r_ps2_learner.^2./NUM_ITERS)'
+
+    end
+    return Average_Regret, Squared_Regret
+end
+
+function Bayesian_regret_trench(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
+
+    problem_data = initialize_trench_problem(PROBLEM_SIZE)
     Average_Regret = zeros(4, T_HORIZON)
     Squared_Regret = zeros(4, T_HORIZON)
 
@@ -317,5 +490,6 @@ function Bayesian_regret(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
     end
     return Average_Regret, Squared_Regret
 end
+
 
 end

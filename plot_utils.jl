@@ -8,16 +8,16 @@ function initialize_plots()
     PyPlot.svg(true)
     linewidth = 1.2 
     PyPlot.rc("text", usetex=true)
-    PyPlot.rc("font", family="sans-serif")
-    PyDict(matplotlib["rcParams"])["font.sans-serif"] = ["Helvetica"]
+    PyPlot.rc("font", family="serif")
+    #PyDict(matplotlib["rcParams"])["font.sans-serif"] = ["Helvetica"]
     #PyPlot.rc("font", sans-serif="Helvetica")
     PyPlot.rc("axes", linewidth=linewidth)
-    PyPlot.rc("axes", titlesize=22, labelsize=22)
-    PyPlot.rc("xtick", labelsize=22)
+    PyPlot.rc("axes", titlesize=10, labelsize=10)
+    PyPlot.rc("xtick", labelsize=10)
     PyPlot.rc("xtick.major", width=linewidth/2)
-    PyPlot.rc("ytick", labelsize=22)
+    PyPlot.rc("ytick", labelsize=10)
     PyPlot.rc("ytick.major", width=linewidth/2)
-    PyPlot.rc("legend", fontsize=22)
+    PyPlot.rc("legend", fontsize=10)
 end
 
 # Pretty plotting for regret + confidence interval
@@ -44,15 +44,15 @@ function plot_old_data()
     K = 2*[4:15]
 
     initialize_plots();
-    PyPlot.figure(4,figsize=(15,10))
+    PyPlot.figure(4,figsize=(3,2))
     ax=gca();
     ax[:patch][:set_visible](false);
     plot(K, vec(R_K[1,:]), color = "red");
     plot(K, vec(R_K[2,:]), color = "orange");
     plot(K, vec(R_K[3,:]), color = "black");
-    xlabel(L"$ $ Problem\ size", fontsize=22)
-    ylabel(L"$ $ Average regret (T = 50)", fontsize=22, fontname="Helvetica");
-    legend(["Mean-based OP ", "UCB-based OP", "Posterior Sampling"]);
+    xlabel(L"$\mathrm{Problem\ size}$", fontsize=10)
+    ylabel(L"$\mathrm{Average regret }(T = 50)$", fontsize=10);
+    legend([L"$\mathrm{Mean-based OP}", L"$\mathrm{UCB-based OP}$", L"$\mathrm{Posterior Sampling}$"]);
 end
 function plot_OP_solvetimes()
     problemsizes = [4:2:50]
@@ -94,11 +94,11 @@ function plot_OP_solvetimes()
 
     # Plot data prettily
     initialize_plots()
-    PyPlot.figure(3,figsize=(15,10))
+    PyPlot.figure(3,figsize=(3,2))
     ax=gca();
     ax[:patch][:set_visible](false);
     semilogy(problemsizes, times);
-    xlabel(L"$ $ Problem\ size", fontsize=22)
-    ylabel(L"$ $ Solution\ time (s)", fontsize=22);
+    xlabel(L"$ $ Problem\ size", fontsize=10)
+    ylabel(L"$ $ Solution\ time (s)", fontsize=10);
 
 end
