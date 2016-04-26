@@ -10,6 +10,7 @@ include("nips_sim.jl")
 @everywhere using NIPS_sim
 
 
+# Deprecated.
 function Prior_sensitivity_simulation(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
 
     xvals, yvals = NIPS_sim.prior_sensitivity(PROBLEM_SIZE, NUM_ITERS, T_HORIZON);
@@ -75,7 +76,6 @@ end
 # TODO: Make the graph structure random, current results depend way too much on the structure.
 function Problem_size_simulation(NUM_ITERS, T_HORIZON, kvals)
     println("Running problem size simulator, averaging over $NUM_ITERS, with time horizon $T_HORIZON. $kvals will be taken");
-
     
     R_K = zeros(4,length(kvals));
     V_K = zeros(4,length(kvals));
@@ -89,7 +89,9 @@ function Problem_size_simulation(NUM_ITERS, T_HORIZON, kvals)
         println("A = ", size(Average_Regret), " S = ", size(Squared_Regret))
         k_index +=1
         for i = 1:4
+            # This is the regret at time T
             R_K[i, k_index] = sum(vec(Average_Regret[i,:]'))
+            V_K[i,k_index]  = 0
         end
     end
 
@@ -98,7 +100,7 @@ function Problem_size_simulation(NUM_ITERS, T_HORIZON, kvals)
     initialize_plots();
     figure(15); clf();
     plot(kvals, R_K');
-    legend(["UCB OP", "UCBR OP", "PS"]);
+    legend(["UCBR OP", "UCB OP", "PS"]);
 
     return R_K, V_K
 end
