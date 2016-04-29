@@ -2,6 +2,7 @@
 using PyCall
 PyDict(pyimport("matplotlib")["rcParams"])["font.sans-serif"] = ["Helvetica"]
 using PyPlot
+using JLD
 
 # Initializes configuration for PyPlot, not everything works the way it was meant.
 function initialize_plots()
@@ -20,20 +21,37 @@ function initialize_plots()
     PyPlot.rc("legend", fontsize=10)
 end
 
+
+function plot_datafile(filename)
+    initialize_plots()
+
+    data = load(filename)
+    #assume that data is complete.
+    means = data["Average_Regret"]
+    sigma = data["Squared_Regret"]
+    for i = 1:4
+        pretty_plot(i, means[i,:], sigma[i,:])
+    end
+    legend(["CombLinTS", "CombLinUCB", "CombGPUCB", "SeqCombGPUCB"])
+end
+
 # Pretty plotting for regret + confidence interval
 function pretty_plot(i, means, sigma)
-    PyPlot.figure(2, figsize=(15,10));
-    sigma  = sqrt(vec(sigma) - means.^2);
-    means = means[find(means)]
+
+    means = vec(means);
+    sigma = vec(sigma)
+    PyPlot.figure(2, figsize=(3,2));
+    sigma  = sqrt(vec(sigma) - vec(means).^2);
+#    means = means[find(means)]
     means = cumsum(means);
-    sigma = sigma[find(means)]
+#    sigma = sigma[find(means)]
 
     L = length(means);
     colors = [:red, :orange, :black, :green]
     plot([1:L], means, color=colors[i]);
     fill_between([1:L], means + sigma, means - sigma, color=colors[i], alpha = 0.3);
-    xlabel("Iteration", fontsize=22)
-    ylabel("Regret", fontsize=22, fontname="Helvetica")
+    xlabel(L"$\mathrm{Iteration}$", fontsize=10)
+    ylabel(L"$\mathrm{Regret}$", fontsize=10)
 end
 
 function plot_old_data()
