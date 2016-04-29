@@ -110,7 +110,7 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
                     ucb[i] += sqrt(2);
                 end
             end
-            path = solve_OP(ucb, distances, budget_left, path_taken[end], problem.n_stop)
+            path = solve_submod_OP(problem, beta_tk, posterior)
             path_taken = [path_taken, path[2]]
             budget_left -= problem.distances[path_taken[end-1], path_taken[end]]
             # Mark node visited to avoid cycles
