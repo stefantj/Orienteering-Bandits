@@ -45,10 +45,10 @@ function solve_OP(values, distances, B,  n_s, n_t)
         curr = find(x_sol[n_s,:]);
         if(length(curr) > 0)
             while(curr[1] != n_t)
-                path = [path, curr]
+                path = [path; curr]
                 curr = find(x_sol[curr,:]);
             end
-            path = [path, curr]
+            path = [path; curr]
         end
     end
 
@@ -105,10 +105,10 @@ function solve_OP_hotstart(values, distances, B, n_s, n_t, x_init, u_init)
         curr = find(x_sol[n_s,:]);
         if(length(curr) > 0)
             while(curr[1] != n_t)
-                path = [path, curr]
+                path = [path; curr]
                 curr = find(x_sol[curr,:]);
             end
-            path = [path, curr]
+            path = [path; curr]
         end
 
         return path, x_sol, u_sol
@@ -130,6 +130,12 @@ function compute_information(problem::BanditProblem, prior::GPR.GaussianProcessE
 end
 
 
+type pathObject
+    path::Vector{Int64}
+    budget_left::Float64
+    reward_to_curr::Float64    
+end
+
 # Used for solving submodular OP. Uses Branch and bound.
 function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProcessEstimate)
     N = length(problem.G.vertices)
@@ -145,6 +151,7 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
             ucb[i] += 1;
         end
     end
+
 
 
     # TODO: use hot starts.
@@ -164,21 +171,24 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
         end
     end
 
-    second_path = solve_OP_hotstart(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop, x_nominal, u_nominal)
+
+    second_path, xtmp, utmp = solve_OP_hotstart(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop, x_nominal, u_nominal)
+
 
     if(sum(abs(nominal_path - second_path)) != 0)
         println("Lazy evaluation does not guarantee correct answer: Trying branch and bound")
         
         # This is where you should insert BnB
 
+        n_t = problem.n_stop
         LB = sum(problem.weights[nominal_path])
-        HHeap = Collections.PriorityQueue{Vector{Int64}, Vector{Float64}}(Base.Order.LexicographicOrdering())
-        HHeap[[n_s]] = [0., B, ucb[n_s]]
+        HHeap = Collections.PriorityQueue()
+        HHeap[pathObject([problem.n_start], problem.budget, ucb[problem.n_start])] = 0.
         while(!isempty(HHeap))
-            val = Collections.peek(HHeap)[2]
-            budget_left = val[2]
-            reward_to_curr = val[3]
-            curr = Collections.dequeue!(HHeap)
+            p = Collections.dequeue!(HHeap)
+            curr = p.path
+            budget_left = p.budget_left
+            reward_to_curr = p.reward_to_curr
             if(curr[end]==n_t) # Reached the destination so compute exact reward
                 reward = sum(problem.weights[curr])+beta*compute_information(problem, prior, curr)
                 if(reward > LB)
@@ -193,9 +203,7 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
                 # Here we reduce the problem:
                 nodes_visited = curr[1:end-1]
                 skip=0;
-                re_index = []
                 unvisited = []
-                ucb = []
                 gp = deepcopy(prior)
 
                 for k = 1:length(problem.weights)
@@ -203,13 +211,12 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
                         skip+=1
                         GPR.update(gp, problem.locations[k, :]', 0.)
                     else
-                        unvisited = [unvisited k]
-                        re_index = [re_index k+skip]
+                        unvisited = [unvisited; k]
                     end
                 end
 
                 # Compute UCB for unvisited sites
-                ucb = zeros(length(unvisited))
+                ucb_r = zeros(length(unvisited))
                 i = 0;
                 for k in unvisited
                     i+=1
@@ -217,22 +224,25 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
                     if(isnan(v))
                         v=1
                     end
-                    ucb[i] = m + beta*sqrt(v)
+                    ucb_r[i] = m + beta*sqrt(v)
                 end
                 
                 # Compute upper bounds
                 for edge in problem.G.finclist[curr[end]]
                     next = edge.target
 
-                    n_s = re_index[curr[end]][1]
-                    n_t = re_index[problem.n_stop][1]
-                    newpath = solve_OP(ucb, problem.distances[unvisited, unvisited], budget_left, n_s, n_t)
+                    # convert indices to reduced problem
+                    n_s_r = find(unvisited.==curr[end])[1]
+                    n_t_r = find(unvisited.==problem.n_stop)[1]
+                    newpath = solve_OP(ucb_r, problem.distances[unvisited, unvisited], budget_left, n_s_r, n_t_r)
 
                     if(!isempty(newpath))
-                        reward_to_next = reward_to_curr + ucb[find(unvisited.==next)]
-                        U_next = reward_to_curr + sum(ucb[newpath])
+                        reward_to_next = reward_to_curr + ucb_r[find(unvisited.==next)]
+                        U_next = reward_to_curr + sum(ucb_r[newpath])
                         if(U_next > LB)
-                             HHeap[[curr,next]] = vec([-U_next, budget_left - problem.distances[curr[end],next], reward_to_next]) 
+			println("*")
+                             HHeap[pathObject(vec([curr;Int64(next)]), budget_left-problem.distances[curr[end],next], reward_to_next[1])] = -U_next
+
                         else 
                              println("eliminated path $curr")
                         end

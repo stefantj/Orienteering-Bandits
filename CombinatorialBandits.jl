@@ -16,4 +16,6 @@ include("oracles.jl")
 include("algorithms.jl")
 include("simulators.jl")
 
+export BanditProblem
+
 end

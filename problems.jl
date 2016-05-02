@@ -22,34 +22,10 @@ function resample_bandit_problem(problem_data::BanditProblem)
     return BanditProblem(problem_data.G, problem_data.locations, problem_data.distances, problem_data.prior, new_weights, problem_data.budget, problem_data.n_start, problem_data.n_stop)
 end
 
-# reduce bandit problem
-# removes nodes visited from problem and returns both problem and a vector that converts indices in the reduced problem to indices in the original problem
-function reduce_bandit_problem(problem_data::BanditProblem, nodes_visited)
-    N1 = length(problem_data.weights)
-    skip=0;
-    re_index = []
-    unvisited = []
-    for k = 1:N1
-        if(k in nodes_visited)
-            skip+=1
-        else
-            unvisited = [unvisited k]
-            re_index = [re_index k+skip]
-        end
-    end
-    dists = problem_data.distances[unvisited, unvisited]
-    locations = problem_data.locations[unvisited]
-    weights = problem_data.weights[unvisited]
-    n_start = re_index[problem_data.n_start]
-    n_stop = re_index[problem_data.n_stop]
-    # Now create the reduced problem:
-
-
-end
 # Initializes a problem with lattice graph structure. 
 function initialize_lattice_problem(pts_dim; directed = true)
 
-    num_pts = int(pts_dim^2)
+    num_pts = Int(pts_dim^2)
     G = simple_graph(num_pts);
     G.is_directed = directed;
 
