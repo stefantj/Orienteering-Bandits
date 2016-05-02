@@ -6,7 +6,7 @@ using JLD
 
 # Initializes configuration for PyPlot, not everything works the way it was meant.
 function initialize_plots()
-    PyPlot.svg(true)
+#    PyPlot.svg(true)
     linewidth = 1.2 
     PyPlot.rc("text", usetex=true)
     PyPlot.rc("font", family="serif")
@@ -48,8 +48,8 @@ function pretty_plot(i, means, sigma)
 
     L = length(means);
     colors = [:red, :orange, :black, :green]
-    plot([1:L], means, color=colors[i]);
-    fill_between([1:L], means + sigma, means - sigma, color=colors[i], alpha = 0.3);
+    plot(collect(1:L), means, color=colors[i]);
+    fill_between(collect(1:L), means + sigma, means - sigma, color=colors[i], alpha = 0.3);
     xlabel(L"$\mathrm{Iteration}$", fontsize=10)
     ylabel(L"$\mathrm{Regret}$", fontsize=10)
 end

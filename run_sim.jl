@@ -10,11 +10,11 @@ include("CombinatorialBandits.jl")
 @everywhere using CombinatorialBandits
 
 # Main routine for running the simulation:
-function Bayesian_regret_simulation(NUM_ITERS, T_HORIZON)
+function Bayesian_regret_simulation(SIZE, NUM_ITERS, T_HORIZON)
     println("Running Bayesian regret simulator, averaging over $NUM_ITERS bandit problems with time horizon $T_HORIZON");
     
     # Initialize data capture
-    problem_size = 10;
+    problem_size = SIZE
     Average_Regret = zeros(4,T_HORIZON)
     Squared_Regret = zeros(4,T_HORIZON)
 

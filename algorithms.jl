@@ -9,7 +9,6 @@ function CombLinTS(problem::BanditProblem, T::Int64)
     reward = zeros(T)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
     for t = 1:T
-	print(".")
         # Plan action:
         path = solve_OP(GPR.sample_n(posterior, problem.locations'), problem.distances, problem.budget, problem.n_start, problem.n_stop)
         # Sample path
@@ -74,7 +73,6 @@ function CombGPUCB(problem::BanditProblem, T::Int64)
         if(information > C)
             path = solve_submod_OP(problem, beta_t, posterior)
         else
-            println("Exploring for more data $information $t")
             # This is a bad idea, but stop-gap.
             path = solve_OP(zeros(length(problem.weights)), problem.distances, problem.budget, problem.n_start, problem.n_stop)
         end
@@ -104,33 +102,51 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2)
     reward = zeros(T)
+    information = 0;
+    C = 1;
+
     for t = 1:T
-	print("_")
         budget_left = deepcopy(problem.budget)
         path_taken = [problem.n_start];
+        path_queue = []
         distances = deepcopy(problem.distances)
         k = 0;
         while(path_taken[end] != problem.n_stop)
             # Update with sample at current location
             GPR.update(posterior, problem.locations[path_taken[end],:]', problem.weights[path_taken[end]] + sqrt(problem.prior.noise)*randn())
-            # Plan action:
-            k+=1;
-            ucb = zeros(N);
-            beta_tk = sqrt(2*log( (t)^2 * N * (pi^2) / 0.6))
-
-            for i=1:N
-                mean,var = GPR.predict(posterior, problem.locations[i,:]')
-                ucb[i] = mean;
-                if(!isnan(var))
-                    ucb[i] += beta_tk*sqrt(var)
-                else
-                    ucb[i] += sqrt(2);
-                end
+            m,v = GPR.predict(posterior, problem.locations[path_taken[end],:]');
+            if(isnan(v))
+                v = 1
             end
+            information += 0.5*log(1+ v/posterior.prior.noise)
+
+            # Check if we need to re-plan
+            if(information > C || isempty(path_queue))
+                if(information > C)
+                    information = 0
+                end
+
+                # Plan action:
+                ucb = zeros(N);
+                beta_tk = sqrt(2*log( (t)^2 * N * (pi^2) / 0.6))
+
+                for i=1:N
+                    mean,var = GPR.predict(posterior, problem.locations[i,:]')
+                    ucb[i] = mean;
+                    if(!isnan(var))
+                        ucb[i] += beta_tk*sqrt(var)
+                    else
+                        ucb[i] += 1
+                    end
+                end
 # TODO: Fix this dumbness
-	    tmp_problem = BanditProblem(problem.G, problem.locations, problem.distances, problem.prior, problem.weights, budget_left, path_taken[end], problem.n_stop)
-            path = solve_submod_OP(tmp_problem, beta_tk, posterior)
-            path_taken = [path_taken; path[2]]
+	            tmp_problem = BanditProblem(problem.G, problem.locations, problem.distances, problem.prior, problem.weights, budget_left, path_taken[end], problem.n_stop)
+                path = solve_submod_OP(tmp_problem, beta_tk, posterior)
+                path_queue = path[2:end]
+            end
+
+            # actually take path
+            path_taken = [path_taken; shift!(path_queue)]
             budget_left -= problem.distances[path_taken[end-1], path_taken[end]]
             # Mark node visited to avoid cycles
             if(length(path_taken) > 1)
