@@ -42,10 +42,8 @@ function Problem_size_simulation(NUM_ITERS, T_HORIZON, kvals)
     k_index = 0;
 
     for K in kvals
-        println("=====================");
-        println("Problem size: 3 x $K")
-        println("=====================");
-        Average_Regret, Squared_Regret = CombinatorialBandits.Bayesian_regret_trench(K, NUM_ITERS, T_HORIZON)
+        println("Problem size $K")
+        Average_Regret, Squared_Regret = CombinatorialBandits.Bayesian_regret_lattice(K, NUM_ITERS, T_HORIZON)
         k_index +=1
         for i = 1:4
             # This is the regret at time T
@@ -63,4 +61,25 @@ function Problem_size_simulation(NUM_ITERS, T_HORIZON, kvals)
     return R_K
 end
 
-
+function Test_Hotstart_times()
+    for problem_size = 3:20
+        t_cold = 0
+        t_hot = 0
+        problem = CombinatorialBandits.initialize_lattice_problem(problem_size)
+        for k = 1:5
+        problem_data = CombinatorialBandits.resample_bandit_problem(problem)
+        path,x,u = CombinatorialBandits.solve_OP_hotstart(problem.weights, problem.distances, problem.budget, problem.n_start, problem.n_stop, nothing, nothing)
+        path = CombinatorialBandits.solve_OP(problem_data)
+        for sample = 1:5
+            t = @timed CombinatorialBandits.solve_OP(problem_data)
+            t_cold += t[2];
+            t = @timed CombinatorialBandits.solve_OP_hotstart(problem_data.weights, problem.distances, problem.budget, problem.n_start, problem.n_stop, x,u)
+            data = t[1];
+            x = data[2]
+            u = data[3]
+            t_hot += t[2]
+        end
+    end
+        println(problem_size, ", ", t_cold/25, ", ", t_hot/25)
+    end
+end

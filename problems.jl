@@ -25,7 +25,7 @@ end
 # Initializes a problem with lattice graph structure. 
 function initialize_lattice_problem(pts_dim; directed = true)
 
-    num_pts = Int(pts_dim^2)
+    num_pts = int(pts_dim^2)
     G = simple_graph(num_pts);
     G.is_directed = directed;
 
@@ -51,6 +51,7 @@ function initialize_lattice_problem(pts_dim; directed = true)
 
     # Budget doesn't really matter for a lattice problem.
     B = 2.19999;
+    B = 3.0
     distances = 2*B*ones(num_pts,num_pts);
     for E in G.edges
         distances[E.source, E.target] = norm(locations[E.source,:] - locations[E.target,:]);

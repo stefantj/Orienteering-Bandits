@@ -8,13 +8,25 @@ function CombLinTS(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
     reward = zeros(T)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
+    x = nothing
+    u = nothing
     for t = 1:T
+        tic()
+        sample_pts = GPR.sample_n(posterior, problem.locations');
+        t0 = toq()
+        tic()
         # Plan action:
-        path = solve_OP(GPR.sample_n(posterior, problem.locations'), problem.distances, problem.budget, problem.n_start, problem.n_stop)
+        path, x, u = solve_OP_hotstart(sample_pts, problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
+        t1 = toq()
+        tic()
         # Sample path
         for pt in path
             y = problem.weights[pt] + sqrt(problem.prior.noise)*randn();
             GPR.update(posterior, problem.locations[pt,:]', y);
+        end
+        t2 = toq()
+        if(mod(t,100)==0)
+            println("TS($t): TS = $t0, T1 = $t1, T2 = $t2")
         end
         reward[t] = sum(problem.weights[path])
     end
@@ -29,6 +41,8 @@ function CombLinUCB(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
     reward = zeros(T)
+    x = nothing
+    u = nothing
     for t = 1:T
         # Plan action:
         beta = sqrt(2*log(t^2*N*(pi^2)/0.6))
@@ -44,7 +58,7 @@ function CombLinUCB(problem::BanditProblem, T::Int64)
         end
 
 
-        path = solve_OP(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop)
+        path, x, u = solve_OP_hotstart(GPR.sample_n(posterior, problem.locations'), problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
         # Now sample the path
         for i = 1:length(path)
             pt = path[i];
@@ -64,16 +78,19 @@ function CombGPUCB(problem::BanditProblem, T::Int64)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
     reward = zeros(T)
     information = 0
-    C = 1
+    C = log(2*sqrt(N) + 1)^3; # This is the maximum information that can be accumulated.  
+    x = nothing
+    u = nothing
 
     for t = 1:T
-        beta_t = sqrt(2*log(t^2*N*(pi^2)/0.6))
+        beta_t = e*sqrt(2*log(t^2*N*(pi^2)/0.6))
         path = []
 
         if(information > C)
-            path = solve_submod_OP(problem, beta_t, posterior)
+            path, x, u = solve_submod_OP(problem, beta_t, posterior, x, u)
         else
             # This is a bad idea, but stop-gap.
+            println("C = $C, information = $information")
             path = solve_OP(zeros(length(problem.weights)), problem.distances, problem.budget, problem.n_start, problem.n_stop)
         end
 
@@ -106,6 +123,7 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
     C = 1;
 
     for t = 1:T
+        tic()
         budget_left = deepcopy(problem.budget)
         path_taken = [problem.n_start];
         path_queue = []
@@ -128,20 +146,29 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
 
                 # Plan action:
                 ucb = zeros(N);
-                beta_tk = sqrt(2*log( (t)^2 * N * (pi^2) / 0.6))
+                beta_tk = (e^C)*sqrt(2*log( (t^2) * N * (pi^2) / 0.6))
 
+                new_C = 0;
                 for i=1:N
                     mean,var = GPR.predict(posterior, problem.locations[i,:]')
                     ucb[i] = mean;
                     if(!isnan(var))
+                        if(var > new_C)
+                            new_C = var
+                        end
                         ucb[i] += beta_tk*sqrt(var)
                     else
                         ucb[i] += 1
                     end
                 end
+                # Adjust C to its smallest value:
+#                C = 0.5*log(1+new_C/posterior.prior.noise)
+
 # TODO: Fix this dumbness
+                x = nothing
+                u = nothing
 	            tmp_problem = BanditProblem(problem.G, problem.locations, problem.distances, problem.prior, problem.weights, budget_left, path_taken[end], problem.n_stop)
-                path = solve_submod_OP(tmp_problem, beta_tk, posterior)
+                path, x, u = solve_submod_OP(tmp_problem, beta_tk, posterior, x, u)
                 path_queue = path[2:end]
             end
 
@@ -155,6 +182,10 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
             end
         end
         reward[t] = sum(problem.weights[path_taken]);
+        t0=toq();
+        if(mod(t,100)==0)
+            println("\nSeq($t): T = $t0")
+        end
     end
 
     return reward
