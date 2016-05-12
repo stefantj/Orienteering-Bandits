@@ -6,8 +6,38 @@ function solve_OP(problem::BanditProblem)
 end
 
 
-OP_CALLS = 0;
+function solve_dijkstra(problem::BanditProblem)
+    if(problem.is_DAC)
+       return solve_dijkstra(problem.G, problem.weights, problem.n_start, problem.n_stop) 
+    else
+        println("Not acyclic, returning empty path")
+        return []
+    end
+end
 
+# Used if the problem is DAC
+# Takes in node weights, transforms into edge weights, and solves using dijkstra's
+# Returns the longest weight path.
+function solve_dijkstra(G::GenericGraph, node_weights, start_node, stop_node)
+    num_edges = length(G.edges)
+    edge_weights = zeros(num_edges)
+    edge_index = 0
+    for edge in G.edges
+        edge_index+=1
+        edge_weights[edge_index] = -node_weights[edge.target]
+    end
+    edge_weights -= minimum(edge_weights)
+
+    # solve problem
+    ssp = Graphs.dijkstra_shortest_paths(G, edge_weights, start_node)
+
+    # Reconstruct path
+    path = [stop_node]
+    while(path[1] != start_node)
+        path = [ssp.parents[path[1]], path]
+    end
+    return path
+end
 
 # Used for solving the modular orienteering problem. Casts as a MIP
 function solve_OP(values, distances, B,  n_s, n_t)
@@ -59,7 +89,6 @@ end
 
 # Uses and returns hotstart values
 function solve_OP_hotstart(values, distances, B, n_s, n_t, x_init, u_init)
-    OP_CALLS=0
     # Formulate problem for Gurobi:
     N = length(values);
     without_start = [1:n_s-1; n_s+1:N];
@@ -140,28 +169,27 @@ end
 
 # Used for solving submodular OP. Uses Branch and bound.
 function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProcessEstimate, x, u)
-    OP_CALLS=0
 
     N = length(problem.G.vertices)
     gp = deepcopy(prior)
+
+    tic()
     # First, try lazily evaluating the path
-    ucb = zeros(N)
-    for i = 1:N
-        mean, var = GPR.predict(gp, problem.locations[i,:]')
-        ucb[i] = mean;
-        if(!isnan(var))
-            ucb[i] += beta*sqrt(var)
-        else
-            ucb[i] += 1;
-        end
+    ucb = GPR.form_ucb(gp,problem.locations', (beta*beta))
+
+    t0 = toq()
+    tic()
+    x_nominal = nothing
+    u_nominal = nothing
+    nominal_path = []
+    if(problem.is_DAC)
+        nominal_path = solve_dijkstra(problem.G, ucb, problem.n_start, problem.n_stop)
+    else
+        nominal_path, x_nominal, u_nominal= solve_OP_hotstart(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
     end
-
-
-
-    OP_CALLS += 1;
-    nominal_path, x_nominal, u_nominal= solve_OP_hotstart(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
-
-
+    t1=toq()
+    #=
+    tic()
     # Now update prior and check if still optimal:
     ucb = GPR.predict_mean(gp, problem.locations');
 
@@ -174,17 +202,21 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
             ucb[x] += beta*sqrt(v)
         end
     end
+    t2 = toq()
+    tic()
 
+    second_path = []
+    if(problem.is_DAC)
+        second_path = solve_dijkstra(problem.G, ucb, problem.n_start, problem.n_stop)
+    else
+        second_path, x_nominal, u_nominal = solve_OP_hotstart(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop, x_nominal, u_nominal)
+    end
+    t3 =toq()
 
-    OP_CALLS += 1;
-    second_path, x_nominal, u_nominal = solve_OP_hotstart(ucb, problem.distances, problem.budget, problem.n_start, problem.n_stop, x_nominal, u_nominal)
-
+    println("$t0 $t1 $t2 $t3;")
 
     if(length(nominal_path) != length(second_path) || sum(abs(nominal_path - second_path)) != 0)
         println("Lazy evaluation does not guarantee correct answer: Trying branch and bound")
-        
-        # This is where you should insert BnB
-
         n_t = problem.n_stop
         LB = sum(problem.weights[nominal_path])
         HHeap = Collections.PriorityQueue()
@@ -211,6 +243,7 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
                 unvisited = []
                 gp = deepcopy(prior)
 
+                opt2_path = []
                 for k = 1:length(problem.weights)
                     if(k in nodes_visited)
                         skip+=1
@@ -240,9 +273,13 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
                       # convert indices to reduced problem
                       n_s_r = find(unvisited.==curr[end])[1]
                       n_t_r = find(unvisited.==problem.n_stop)[1]
-                      OP_CALLS += 1;
-                      newpath = solve_OP(ucb_r, problem.distances[unvisited, unvisited], budget_left, n_s_r, n_t_r)
 
+                      if(problem.is_DAC)
+                          prb = subproblem(problem,unvisited)
+                        newpath = solve_dijkstra(prb.G, ucb_r, n_s_r, n_t_r)
+                      else
+                        newpath = solve_OP(ucb_r, problem.distances[unvisited, unvisited], budget_left, n_s_r, n_t_r)
+                      end
                       if(!isempty(newpath))
                         if(length(unvisited)==0)
                             #println("no unvisited nodes")
@@ -270,7 +307,7 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
             end
         end
     end
-#    println("OP_CALLS: $OP_CALLS")
+    =#
     return nominal_path, x_nominal, u_nominal
 end
 

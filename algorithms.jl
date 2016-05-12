@@ -16,7 +16,12 @@ function CombLinTS(problem::BanditProblem, T::Int64)
         t0 = toq()
         tic()
         # Plan action:
-        path, x, u = solve_OP_hotstart(sample_pts, problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
+        path=[]
+        if(problem.is_DAC)
+            path = solve_dijkstra(problem.G, sample_pts, problem.n_start, problem.n_stop)
+        else
+            path, x, u = solve_OP_hotstart(sample_pts, problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
+        end
         t1 = toq()
         tic()
         # Sample path
@@ -24,11 +29,12 @@ function CombLinTS(problem::BanditProblem, T::Int64)
             y = problem.weights[pt] + sqrt(problem.prior.noise)*randn();
             GPR.update(posterior, problem.locations[pt,:]', y);
         end
-        t2 = toq()
-        if(mod(t,100)==0)
-            println("TS($t): TS = $t0, T1 = $t1, T2 = $t2")
-        end
         reward[t] = sum(problem.weights[path])
+        t2 = toq()
+        if(mod(t,10)==0)
+            r = sum(reward[1:t])
+            println("TS($r)")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
+        end
     end
     return reward
 end
@@ -57,8 +63,12 @@ function CombLinUCB(problem::BanditProblem, T::Int64)
             end
         end
 
-
-        path, x, u = solve_OP_hotstart(GPR.sample_n(posterior, problem.locations'), problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
+        path = []
+        if(problem.is_DAC)
+            path = solve_dijkstra(problem.G, GPR.sample_n(posterior, problem.locations'), problem.n_start, problem.n_stop)
+        else
+            path, x, u = solve_OP_hotstart(GPR.sample_n(posterior, problem.locations'), problem.distances, problem.budget, problem.n_start, problem.n_stop, x, u)
+        end
         # Now sample the path
         for i = 1:length(path)
             pt = path[i];
@@ -120,22 +130,27 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2)
     reward = zeros(T)
     information = 0;
-    C = 1;
+    C = .01;
+    delta = 0.999
 
     for t = 1:T
         tic()
-        budget_left = deepcopy(problem.budget)
         path_taken = [problem.n_start];
         path_queue = []
-        distances = deepcopy(problem.distances)
+        distances = 0
+        budget_left = 0
+        if(!problem.is_DAC)
+            # IN DAC problem, this is irrelevant since 1) no loops and 2) all paths to goal have same cost
+            distances = deepcopy(problem.distances)
+            budget_left = deepcopy(problem.budget)
+        end
         k = 0;
+        t0 = toq()
         while(path_taken[end] != problem.n_stop)
+            tic()
             # Update with sample at current location
             GPR.update(posterior, problem.locations[path_taken[end],:]', problem.weights[path_taken[end]] + sqrt(problem.prior.noise)*randn())
-            m,v = GPR.predict(posterior, problem.locations[path_taken[end],:]');
-            if(isnan(v))
-                v = 1
-            end
+            v = GPR.predict_var(posterior, vec(problem.locations[path_taken[end],:]'));
             information += 0.5*log(1+ v/posterior.prior.noise)
 
             # Check if we need to re-plan
@@ -145,46 +160,46 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
                 end
 
                 # Plan action:
-                ucb = zeros(N);
-                beta_tk = (e^C)*sqrt(2*log( (t^2) * N * (pi^2) / 0.6))
-
-                new_C = 0;
-                for i=1:N
-                    mean,var = GPR.predict(posterior, problem.locations[i,:]')
-                    ucb[i] = mean;
-                    if(!isnan(var))
-                        if(var > new_C)
-                            new_C = var
-                        end
-                        ucb[i] += beta_tk*sqrt(var)
-                    else
-                        ucb[i] += 1
-                    end
-                end
-                # Adjust C to its smallest value:
-#                C = 0.5*log(1+new_C/posterior.prior.noise)
+                beta_tk = (e^C)*sqrt(2*log( (t^2) * N * (pi^2) / (6*delta)))
+                ucb = GPR.form_ucb(posterior, problem.locations', beta_tk^2)
 
 # TODO: Fix this dumbness
                 x = nothing
                 u = nothing
-	            tmp_problem = BanditProblem(problem.G, problem.locations, problem.distances, problem.prior, problem.weights, budget_left, path_taken[end], problem.n_stop)
+                unvisited = setdiff([1:N], path_taken[1:end-1])
+                # This creates graph
+                tmp_problem = subproblem(problem, unvisited)
+                n_s_r = find(unvisited.==path_taken[end])[1]
+                n_t_r = find(unvisited.==problem.n_stop)[1]
+                if(!problem.is_DAC)
+	                tmp_problem = BanditProblem(tmp_problem.G, tmp_problem.locations, tmp_problem.distances, tmp_problem.prior, tmp_problem.weights, budget_left,n_s_r, n_t_r,problem.is_DAC)
+                else
+                    tmp_problem = BanditProblem(tmp_problem.G, tmp_problem.locations,tmp_problem.distances,tmp_problem.prior,tmp_problem.weights,tmp_problem.budget, n_s_r, n_t_r, problem.is_DAC)
+                end
+
                 path, x, u = solve_submod_OP(tmp_problem, beta_tk, posterior, x, u)
-                path_queue = path[2:end]
+                # convert path back into `normal' indexing.
+                path_queue = unvisited[path[2:end]]
             end
 
             # actually take path
             path_taken = [path_taken; shift!(path_queue)]
-            budget_left -= problem.distances[path_taken[end-1], path_taken[end]]
-            # Mark node visited to avoid cycles
-            if(length(path_taken) > 1)
-                distances[:,path_taken[end-1]] = problem.budget
-                distances[path_taken[end-1],:] = problem.budget
+            if(!problem.is_DAC)
+                budget_left -= problem.distances[path_taken[end-1], path_taken[end]]
+                # Mark node visited to avoid cycles
+                if(length(path_taken) > 1)
+                    distances[:,path_taken[end-1]] = problem.budget
+                    distances[path_taken[end-1],:] = problem.budget
+                end
             end
+            tmp = toq()
+            t0 += tmp
+#            print(" $tmp ")
         end
         reward[t] = sum(problem.weights[path_taken]);
-        t0=toq();
-        if(mod(t,100)==0)
-            println("\nSeq($t): T = $t0")
+        r = sum(reward[1:t])
+        if(mod(t-1,10)==0)
+            println("\nSeq($r) $t")#: T = $t0, R = ", reward[t], ", ",posterior.numcenters)
         end
     end
 

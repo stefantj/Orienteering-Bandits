@@ -17,14 +17,15 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
         println("\n==== ITER $iteration ====");
 ## Generate instance of the problem from the prior: ##
         problem_data = resample_bandit_problem(PROBLEM)
-        optimal_path = solve_OP(problem_data);
-        p_size += length(optimal_path)
-        println("Optimal path has ", length(optimal_path), " nodes. Avg = ",p_size/iteration)
+#        optimal_path = solve_OP(problem_data);
+#        p_size += length(optimal_path)
+#        println("Optimal path has ", length(optimal_path), " nodes. Avg = ",p_size/iteration)
+        optimal_path = solve_dijkstra(problem_data)
 
 ## Run learning algorithms: ##
 
         # CombLinTS: From Kveton et al.
-#        s_comblints = @spawn CombLinTS(problem_data, T_HORIZON)
+        s_comblints = @spawn CombLinTS(problem_data, T_HORIZON)
 
         # CombLinUCB: From Kveton et al.
 #        s_comblinucb = @spawn CombLinUCB(problem_data, T_HORIZON)
@@ -33,16 +34,16 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
 #        s_combgpucb = @spawn CombGPUCB(problem_data, T_HORIZON)
 
         # SeqCombGPUCB: Algorithm 2 from our paper
-#        s_seqcombgpucb = @spawn SeqCombGPUCB(problem_data, T_HORIZON)
+        s_seqcombgpucb = @spawn SeqCombGPUCB(problem_data, T_HORIZON)
 
 ## Record cumulative rewards: ##
         r_optimal = sum(problem_data.weights[optimal_path])
-#        r_comblints = fetch(s_comblints)
+        r_comblints = fetch(s_comblints)
 #        r_comblinucb = fetch(s_comblinucb)
 #        r_combgpucb  = fetch(s_combgpucb)
-#        r_seqcombgpucb = fetch(s_seqcombgpucb)
-        r_seqcombgpucb = @time SeqCombGPUCB(problem_data, T_HORIZON)
-        r_comblints  = NaN*r_seqcombgpucb
+        r_seqcombgpucb = fetch(s_seqcombgpucb)
+#        r_seqcombgpucb = @time SeqCombGPUCB(problem_data, T_HORIZON)
+#        r_comblints  = NaN*r_seqcombgpucb
         r_comblinucb = NaN*r_seqcombgpucb
         r_combgpucb = NaN*r_seqcombgpucb
 
@@ -50,6 +51,9 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
                                        vec(r_optimal - r_comblinucb)'
                                        vec(r_optimal - r_combgpucb)'
                                        vec(r_optimal - r_seqcombgpucb)']
+
+        println("Regrets: TS: ", sum(All_Regrets[1,:,iteration]), ", Seq: ", sum(All_Regrets[4,:,iteration]))
+
 
 ## Record regret: ##
         Average_Regret[1,:] += ( (r_optimal - r_comblints)./NUM_ITERS)'
@@ -84,4 +88,36 @@ function Bayesian_regret_trench(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
     return Bayesian_Regret(initialize_trench_problem(PROBLEM_SIZE), NUM_ITERS, T_HORIZON)
 end
 
+
+function test_graph_solutions()
+    
+    for size = 3:30
+        # Create instances of problem
+        d0 = @timed initialize_lattice_problem(size)
+
+        # Re-sample problem
+        d1 = @timed resample_bandit_problem(d0[1])
+
+        problem = d1[1]
+        # Initial solve
+        d2 = @timed solve_OP_hotstart(problem.weights, problem.distances, problem.budget, problem.n_start, problem.n_stop, nothing, nothing)
+        data = d2[1]
+        println("Path 1 = ", data[1])
+        r2 = sum(problem.weights[data[1]])
+        # Hotstart solve
+        d3 = @timed solve_OP_hotstart(problem.weights, problem.distances, problem.budget, problem.n_start, problem.n_stop, nothing, nothing)
+        data = d3[1]
+        println("Path 2 = ", data[1])
+        r3 = sum(problem.weights[data[1]])
+        # Dijkstra solve
+        d4 = @timed solve_dijkstra(problem.G, problem.weights, problem.n_start, problem.n_stop)
+        println("Path 3 = ", d4[1])
+        r4 = sum(problem.weights[d4[1]])
+
+        println("Size $size: Initialization time ", d0[2], " Sampling time ", d1[2], " Initial OP time: ", d2[2], " Second hotstart time: ", d3[2], " Dijkstra's time: ", d4[2])
+        println("Rewards: $r2, $r3, $r4")
+
+    end
+
+end
 
