@@ -31,7 +31,7 @@ function CombLinTS(problem::BanditProblem, T::Int64)
         end
         reward[t] = sum(problem.weights[path])
         t2 = toq()
-        if(mod(t,10)==0)
+        if(mod(t-1,10)==0)
             r = sum(reward[1:t])
             println("TS($r)")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
         end

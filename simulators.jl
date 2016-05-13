@@ -84,8 +84,12 @@ function Bayesian_regret_lattice(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
     return Bayesian_Regret(initialize_lattice_problem(PROBLEM_SIZE), NUM_ITERS, T_HORIZON)
 end
 
-function Bayesian_regret_trench(PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
-    return Bayesian_Regret(initialize_trench_problem(PROBLEM_SIZE), NUM_ITERS, T_HORIZON)
+function Bayesian_regret_trench(PROBLEM_WIDTH, PROBLEM_SIZE, NUM_ITERS, T_HORIZON)
+    return Bayesian_Regret(initialize_trench_problem(PROBLEM_WIDTH,PROBLEM_SIZE), NUM_ITERS, T_HORIZON)
+end
+
+function Bayesian_regret_wind(FILENAME, NUM_ITERS, T_HORIZON)
+    return Bayesian_Regret(initialize_wind_problem(FILENAME), NUM_ITERS, T_HORIZON)
 end
 
 

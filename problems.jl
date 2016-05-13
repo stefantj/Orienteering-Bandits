@@ -113,9 +113,8 @@ function initialize_lattice_problem(pts_dim; directed = true)
     return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, directed)
 end
 
-function initialize_trench_problem(pts_dim; directed=true)
+function initialize_trench_problem(width, pts_dim; directed=true)
 
-    width=3;
     num_pts = int(pts_dim*width)
     G = simple_graph(num_pts)
     G.is_directed = directed
@@ -164,5 +163,48 @@ function initialize_trench_problem(pts_dim; directed=true)
 
     return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, directed)
 end
-    
+   
+# Loads wind data from datafile.csv
+function initialize_wind_problem(datafile)
+    d = load(datafile)
+    NT = d["NT"]
+    NA = d["NA"]
+    locations = d["locations"]
+    distances = d["distances"]
+    prior = d["prior"]
+    weights = d["weights"]
+
+    num_pts = NT*NA
+    G = simple_graph(num_pts)
+    G.is_directed = directed
+    edge_index = 0
+    node_index = 0
+    for t = 1:NT
+        for a = 1:NA
+            node_index += 1
+            if(t < NT)
+                # Connect right if t < NT
+                edge_index += 1
+                add_edge!(G, Edge(edge_index, node_index, node_index + NA))
+                # Connect down if not on bottom or edge
+                if(a > 1)
+                    edge_index += 1
+                    add_edge!(G, Edge(edge_index, node_index, node_index + NA - 1))
+                end
+                # Connect up if not on top or edge
+                if(a < NA)
+                    edge_index += 1
+                    add_edge!(G, Edge(edge_index, node_index, node_index + NA + 1))
+                end
+            end
+        end
+    end
+
+    # Budget is irrelevant since DAG
+    B = 100000
+    n_s = 1
+    n_t = num_pts
+
+    return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, true)
+end
 
