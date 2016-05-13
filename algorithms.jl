@@ -31,9 +31,9 @@ function CombLinTS(problem::BanditProblem, T::Int64)
         end
         reward[t] = sum(problem.weights[path])
         t2 = toq()
-        if(mod(t-1,10)==0)
-            r = sum(reward[1:t])
-            println("TS($r)")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
+        if(true || mod(t-1,10)==0)
+            r = reward[t]
+            println("TS($r) $t")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
         end
     end
     return reward
@@ -197,8 +197,8 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
 #            print(" $tmp ")
         end
         reward[t] = sum(problem.weights[path_taken]);
-        r = sum(reward[1:t])
-        if(mod(t-1,10)==0)
+        r = reward[t]
+        if(true || mod(t-1,10)==0)
             println("\nSeq($r) $t")#: T = $t0, R = ", reward[t], ", ",posterior.numcenters)
         end
     end

@@ -167,16 +167,17 @@ end
 # Loads wind data from datafile.csv
 function initialize_wind_problem(datafile)
     d = load(datafile)
-    NT = d["NT"]
-    NA = d["NA"]
+    NT = int(d["NT"])
+    NA = int(d["NA"])
     locations = d["locations"]
     distances = d["distances"]
-    prior = d["prior"]
+    p = d["prior"]
+    prior = GPR.GaussianProcess(p.prior.noise, GPR.SquaredExponential(p.prior.kernel.bandwidth, p.prior.kernel.variance))
     weights = d["weights"]
 
-    num_pts = NT*NA
+    num_pts = int(NT*NA)
     G = simple_graph(num_pts)
-    G.is_directed = directed
+    G.is_directed = true
     edge_index = 0
     node_index = 0
     for t = 1:NT

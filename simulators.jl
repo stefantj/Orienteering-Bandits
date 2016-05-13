@@ -24,6 +24,7 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
 
 ## Run learning algorithms: ##
 
+        println("Optval = ", sum(problem_data.weights[optimal_path]))
         # CombLinTS: From Kveton et al.
         s_comblints = @spawn CombLinTS(problem_data, T_HORIZON)
 
@@ -53,6 +54,7 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
                                        vec(r_optimal - r_seqcombgpucb)']
 
         println("Regrets: TS: ", sum(All_Regrets[1,:,iteration]), ", Seq: ", sum(All_Regrets[4,:,iteration]))
+        println("Rewards: TS: ", sum(r_comblints), ", Seq: ", sum(r_seqcombgpucb))
 
 
 ## Record regret: ##
