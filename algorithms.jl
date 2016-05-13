@@ -31,9 +31,9 @@ function CombLinTS(problem::BanditProblem, T::Int64)
         end
         reward[t] = sum(problem.weights[path])
         t2 = toq()
-        if(true || mod(t-1,10)==0)
+        if( mod(t-1,10)==0)
             r = reward[t]
-            println("TS($r) $t")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
+#            println("TS($r) $t")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
         end
     end
     return reward
@@ -130,8 +130,8 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
     posterior = GPR.GaussianProcessEstimate(problem.prior, 2)
     reward = zeros(T)
     information = 0;
-    C = .01;
-    delta = 0.999
+    C = .3;
+    delta = 0.9
 
     for t = 1:T
         tic()
@@ -158,6 +158,7 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
                 if(information > C)
                     information = 0
                 end
+                #print(".")
 
                 # Plan action:
                 beta_tk = (e^C)*sqrt(2*log( (t^2) * N * (pi^2) / (6*delta)))
@@ -198,8 +199,8 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
         end
         reward[t] = sum(problem.weights[path_taken]);
         r = reward[t]
-        if(true || mod(t-1,10)==0)
-            println("\nSeq($r) $t")#: T = $t0, R = ", reward[t], ", ",posterior.numcenters)
+        if(mod(t-1,10)==0)
+#            println("\nSeq($r) $t")#: T = $t0, R = ", reward[t], ", ",posterior.numcenters)
         end
     end
 

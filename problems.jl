@@ -26,6 +26,32 @@ function resample_bandit_problem(problem_data::BanditProblem)
     return BanditProblem(problem_data.G, problem_data.locations, problem_data.distances, problem_data.prior, new_weights, problem_data.budget, problem_data.n_start, problem_data.n_stop, problem_data.is_DAC)
 end
 
+function shuffle_bandit_problem(problem_data::BanditProblem)
+    num_pts = length(problem_data.weights)
+
+    inds = shuffle([1:num_pts])
+
+    locations = zeros(num_pts,2)
+    distances = zeros(num_pts, num_pts)
+    for j = 1:num_pts
+        locations[inds[j],:] = problem_data.locations[j,:]
+        for i = 1:num_pts
+            distances[inds[i], inds[j]] = problem_data.distances[i,j]
+        end
+    end
+    n_s = inds[problem_data.n_start]
+    n_t = inds[problem_data.n_stop]
+    G = simple_graph(num_pts)
+    G.is_directed = problem_data.G.is_directed
+    edge_index = 0;
+    for E in problem_data.G.edges
+        edge_index += 1
+        add_edge!(G, Edge(edge_index, inds[E.source], inds[E.target]))
+    end
+
+    return BanditProblem(G, locations, distances, problem_data.prior, problem_data.weights[inds], problem_data.budget, n_s, n_t, problem_data.is_DAC)
+end
+
 # Returns a subproblem with only selected nodes. TODO: make more efficient
 function subproblem(problem::BanditProblem, selected_nodes)
     num_pts = length(selected_nodes)
@@ -153,7 +179,7 @@ function initialize_trench_problem(width, pts_dim; directed=true)
     n_s = 1;
     n_t = num_pts;
     # Initialize prior
-    prior = GPR.GaussianProcess( 0.1, GPR.SquaredExponential(0.01/pts_dim,1.0))
+    prior = GPR.GaussianProcess( 0.1, GPR.SquaredExponential(0.1/pts_dim,4.0))
 
     if( GPR.covar(prior.kernel, 0., 1/(pts_dim-1)) > 0.9)
         warn("Likely unstable covariance matrix: Try adjusting the bandwidth to be smaller");

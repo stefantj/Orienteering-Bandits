@@ -10,13 +10,15 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
     # Create unique file name for storing data:
     filename = "data/"*randstring()*".jld"
 
+    println("Saving to $filename")
     p_size = 0;
     t_avg = 0;
     for iteration = 1:NUM_ITERS
         tic()
         println("\n==== ITER $iteration ====");
 ## Generate instance of the problem from the prior: ##
-        problem_data = resample_bandit_problem(PROBLEM)
+#        problem_data = resample_bandit_problem(PROBLEM)
+        problem_data = shuffle_bandit_problem(resample_bandit_problem(PROBLEM))
 #        optimal_path = solve_OP(problem_data);
 #        p_size += length(optimal_path)
 #        println("Optimal path has ", length(optimal_path), " nodes. Avg = ",p_size/iteration)
