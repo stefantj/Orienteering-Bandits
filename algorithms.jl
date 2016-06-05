@@ -1,9 +1,7 @@
-# Contains learners.
-
-#using NIPS_sim.BanditProblem, NIPS_sim.solve_OP, NIPS_sim.solve_submod_OP
+# Contains learning algorithms
 
 # CombLinTS
-# Proposed by Kveton et al.
+# Proposed by Kveton et al. 
 function CombLinTS(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
     reward = zeros(T)
@@ -120,8 +118,6 @@ function CombGPUCB(problem::BanditProblem, T::Int64)
     end
     return reward 
 end
-
-
 
 
 

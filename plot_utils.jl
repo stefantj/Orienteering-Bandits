@@ -1,10 +1,13 @@
+# plot_utils.jl
 # stuff for making pretty plots
+
+#This is for getting pyplot to print with LaTex
 using PyCall
 PyDict(pyimport("matplotlib")["rcParams"])["font.sans-serif"] = ["Helvetica"]
 using PyPlot
 using JLD
 
-# Initializes configuration for PyPlot, not everything works the way it was meant.
+# Initializes configuration for PyPlot, not everything works the way it should. Looks pretty though.
 function initialize_plots()
 #    PyPlot.svg(true)
     linewidth = 1.2 
@@ -22,101 +25,105 @@ function initialize_plots()
 end
 
 
+# Plots regret for CombLinTS and SeqGPUCB.
+# The lightly shaded regions represent the range of all samples, the dark shading is the 1-sigma interval, the solid line is the mean and the dotted line is the median.
 function plot_datafile(filename)
+    # Set up figure
+    figure(1); clf();
     initialize_plots()
 
-    data = load(filename)
-    #assume that data is complete.
-    means = data["Average_Regret"]
-    sigma = data["Squared_Regret"]
-    for i = 1:4
-        pretty_plot(i, means[i,:], sigma[i,:])
+    d = load(filename)
+
+    T = d["T"]
+    iters = d["iters"]
+    top_Q = int(floor(iters*.75))+1
+    low_Q = int(floor(iters*.25))+1
+
+    Average_Regret = d["Average_Regret"]
+    All_Regrets = d["All_Regrets"]
+
+    upper = zeros(4,T)
+    top25 = zeros(4,T)
+    bottom25 = zeros(4,T)
+    lower = zeros(4,T)
+    avg = zeros(4,T)
+    med = zeros(4,T)
+
+    # Process data
+    algos = [1,4] # This is a concession to old code
+     for algo in algos
+        for t = 2:T
+            for i = 1:iters
+                if(isnan(All_Regrets[algo,t,i]))
+                    All_Regrets[algo,t,i] = All_Regrets[algo,t-1,i]
+                end
+                All_Regrets[algo,t,i] += All_Regrets[algo,t-1,i]
+            end
+        end
     end
-    legend(["CombLinTS", "CombLinUCB", "CombGPUCB", "SeqCombGPUCB"])
-end
+    
+    for algo in algos
+        for t = 1:T
+            vals = sort(vec(All_Regrets[algo,t,1:iters]))
+            lower[algo,t] = vals[1]
+            bottom25[algo,t] = vals[1]
+            med[algo,t] = vals[int(floor(iters/2))+1]
+            upper[algo,t] = vals[end]
+            top25[algo,t] = vals[end]
+            avg[algo,t] = sum(vals[1:end])/iters
+        end
+    end
 
-# Pretty plotting for regret + confidence interval
-function pretty_plot(i, means, sigma)
+    diffs = zeros(iters)
+    for i = 1:iters
+        diffs[i] = sum(All_Regrets[1,:,i]) - sum(All_Regrets[4,:,i])
+    end
+    sharpe = mean(diffs)/std(diffs)
+println(sharpe)
 
-    means = vec(means);
-    sigma = vec(sigma)
-    PyPlot.figure(2, figsize=(3,2));
-    sigma  = sqrt(vec(sigma) - vec(means).^2);
-#    means = means[find(means)]
-    means = cumsum(means);
-#    sigma = sigma[find(means)]
+    # Now plot:
+    colors = [:red, :green, :black, :blue]
 
-    L = length(means);
-    colors = [:red, :orange, :black, :green]
-    plot(collect(1:L), means, color=colors[i]);
-    fill_between(collect(1:L), means + sigma, means - sigma, color=colors[i], alpha = 0.3);
-    xlabel(L"$\mathrm{Iteration}$", fontsize=10)
-    ylabel(L"$\mathrm{Regret}$", fontsize=10)
-end
+    
+    for algo in algos
+        plot(collect(1:T), avg[algo,:]', color=colors[algo])
+    end
+#    legend(["CombLinTS", "CombLinUCB", "GPCombUCB (untuned)", "SeqCombGPUCB (tuned)"], loc="lower right")
+    for algo in algos
+        plot(collect(1:T), vec(med[algo,:]'), color=colors[algo], linestyle="-.")
+        fill_between(collect(1:T), vec(upper[algo,:]'), vec(lower[algo,:]'), color=colors[algo], alpha=0.1)
+        fill_between(collect(1:T), vec(top25[algo,:]'), vec(bottom25[algo,:]'), color=colors[algo], alpha=0.4)
+    end
+    psize = int(sqrt(d["problem_size"]))
+    #println("$psize x $psize")
+    if(d["problem_size"] < 36)
+#        ylim(-1,50)
+#        text(0.6*T, 44, "Problem size: $psize x $psize")
+#        text(0.6*T, 40, "Samples: $iters")
+    elseif(d["problem_size"] < 81)
+#        ylim(-1,100)
+#        text(0.6*T, 88, "Problem size: $psize x $psize\nSamples: $iters")
+#        text(0.6*T, 80, "Samples: $iters")
+    else
+        ylim(-1,250)
+       # text(0.6*T, 3*44, "Problem size: $psize x $psize")
+#        text(0.6*T, 5*44, "Problem size: 3 x 40\n Samples: $iters")
+#        text(0.1*T, 5*44, "Shaded region shows range of results\n Solid curve shows mean results.\n Dashed curve is median.")
+    end
 
-function plot_old_data()
-     R_K =[  24.5773   37.6038   66.3529   62.8673   87.8417   99.4096  173.231   161.391   173.375   286.704    392.242   394.232
-      15.2746   14.0633   21.3789   22.8239   36.3179   49.9275   53.2236   62.6831   63.2047   97.1291   102.73    127.061
-       151.853   260.408   264.205   343.848   397.783   524.073   577.729   673.051   745.813   883.424   1024.16   1044.24 ]
 
-    K = 2*[4:15]
+    xlabel(L"$\mathrm{Learning\ time}$", fontsize=20)
+    ylabel(L"$\mathrm{Regret}$", fontsize=20)
+    if(4 in algos)
+        algo=4
+        for i = 1:iters
+            plot(vec(All_Regrets[algo,:,i]), color=colors[algo], alpha=0.03)
+        end
+    end
 
-    initialize_plots();
-    PyPlot.figure(4,figsize=(3,2))
-    ax=gca();
-    ax[:patch][:set_visible](false);
-    plot(K, vec(R_K[1,:]), color = "red");
-    plot(K, vec(R_K[2,:]), color = "orange");
-    plot(K, vec(R_K[3,:]), color = "black");
-    xlabel(L"$\mathrm{Problem\ size}$", fontsize=10)
-    ylabel(L"$\mathrm{Average regret }(T = 50)$", fontsize=10);
-    legend([L"$\mathrm{Mean-based OP}", L"$\mathrm{UCB-based OP}$", L"$\mathrm{Posterior Sampling}$"]);
-end
-function plot_OP_solvetimes()
-    problemsizes = [4:2:50]
-    times = 0.*zeros(length(problemsizes))
-    index = 0;
-#    for K in problemsizes
-#        index+=1
-#        problem = initialize_lattice_problem(K);
-#        problem.weights = vec(GPR.sample_n(GPR.GaussianProcessEstimate(problem.prior,2), problem.locations'));
-#        t = @timed tmp = solve_OP(problem.weights, problem.distances, problem.Budget, problem.n_start, problem.n_stop);
-#        times[index] = t[2]
-#        println("$K: ", times[index]);
-#    end
-    k = [4:2:50]
-    times = [0.002420089
-    0.011295358
-    0.048471505
-    0.098256805
-    0.300514627
-    0.431459249
-    0.71386857
-    1.084084079
-    1.616713654
-    2.57380616
-    3.571207608
-    5.859107302
-    7.159102843
-    10.114903775
-    13.80530353
-    16.694673954
-    23.381478081
-    31.630672861
-    41.219513932
-    53.2158575
-    75.211981148
-    87.694839696
-    109.215243209
-    153.841422806]
 
-    # Plot data prettily
-    initialize_plots()
-    PyPlot.figure(3,figsize=(3,2))
-    ax=gca();
-    ax[:patch][:set_visible](false);
-    semilogy(problemsizes, times);
-    xlabel(L"$ $ Problem\ size", fontsize=10)
-    ylabel(L"$ $ Solution\ time (s)", fontsize=10);
+        #println("Median ratio: ", med[4,end]/med[1,end] , " Average ratio: ", avg[4,end]/avg[1,end])
 
+#    return [lower[:,1000] bottom25[:,1000] avg[:,1000] top25[:,1000] upper[:,1000]]
+    return [lower[:,end] bottom25[:,end] med[:,end] top25[:,end] upper[:,end]]
 end

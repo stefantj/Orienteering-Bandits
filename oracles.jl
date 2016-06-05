@@ -5,7 +5,7 @@ function solve_OP(problem::BanditProblem)
     return solve_OP(problem.weights, problem.distances, problem.budget, problem.n_start, problem.n_stop)
 end
 
-
+# If the problem can be solved using Dynamic programming, do it
 function solve_dijkstra(problem::BanditProblem)
     if(problem.is_DAC)
        return solve_dijkstra(problem.G, problem.weights, problem.n_start, problem.n_stop) 
@@ -40,6 +40,7 @@ function solve_dijkstra(G::GenericGraph, node_weights, start_node, stop_node)
 end
 
 # Used for solving the modular orienteering problem. Casts as a MIP
+# requires Gurobi
 function solve_OP(values, distances, B,  n_s, n_t)
     # Formulate problem for Gurobi:
     N = length(values);
@@ -189,6 +190,7 @@ function solve_submod_OP(problem::BanditProblem, beta, prior::GPR.GaussianProces
     end
     t1=toq()
     #=
+# We skip the re-check since it significantly increases run-time and 99.99% of the time is irrelevant.
     tic()
     # Now update prior and check if still optimal:
     ucb = GPR.predict_mean(gp, problem.locations');

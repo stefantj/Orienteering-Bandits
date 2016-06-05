@@ -8,8 +8,8 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
     Squared_Regret = zeros(4, T_HORIZON)
 
     # Create unique file name for storing data:
-    filename = "data/"*randstring()*".jld"
-
+#    filename = "data/"*randstring()*".jld"
+    filename = "sim_data.jld"
     println("Saving to $filename")
     p_size = 0;
     t_avg = 0;
@@ -19,14 +19,9 @@ function Bayesian_Regret(PROBLEM, NUM_ITERS, T_HORIZON)
 ## Generate instance of the problem from the prior: ##
 	problem_data = PROBLEM
         problem_data = resample_bandit_problem(PROBLEM)
-#        problem_data = shuffle_bandit_problem(resample_bandit_problem(PROBLEM))
-#        optimal_path = solve_OP(problem_data);
-#        p_size += length(optimal_path)
-#        println("Optimal path has ", length(optimal_path), " nodes. Avg = ",p_size/iteration)
         optimal_path = solve_dijkstra(problem_data)
 
 ## Run learning algorithms: ##
-
         println("Optval = ", sum(problem_data.weights[optimal_path]))
         # CombLinTS: From Kveton et al.
         s_comblints = @spawn CombLinTS(problem_data, T_HORIZON)

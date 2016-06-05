@@ -27,6 +27,7 @@ function resample_bandit_problem(problem_data::BanditProblem)
     return BanditProblem(problem_data.G, problem_data.locations, problem_data.distances, problem_data.prior, new_weights, problem_data.budget, problem_data.n_start, problem_data.n_stop, problem_data.is_DAC)
 end
 
+# Shuffles the locations of nodes. Used to average the effect of spatial correlation structure.
 function shuffle_bandit_problem(problem_data::BanditProblem)
     num_pts = length(problem_data.weights)
 

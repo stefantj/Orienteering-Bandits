@@ -7,8 +7,7 @@ using JuMP
 #using Gurobi
 using Graphs
 
-include("../Libraries/GPR/GPR.jl")
-using GPR
+include("GPR.jl")
 
 # Other module files
 include("problems.jl")
