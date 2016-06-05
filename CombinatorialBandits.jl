@@ -4,7 +4,7 @@ module CombinatorialBandits
 
 using JLD
 using JuMP
-using Gurobi
+#using Gurobi
 using Graphs
 
 include("../Libraries/GPR/GPR.jl")

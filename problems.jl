@@ -3,6 +3,7 @@ export BanditProblem
 export initialize_lattice_problem
 export initialize_trench_problem
 
+using PyPlot
 
 # Contains all of the necessary information for an orienteering bandit problem.
 immutable BanditProblem
@@ -139,6 +140,86 @@ function initialize_lattice_problem(pts_dim; directed = true)
     return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, directed)
 end
 
+# Initializes a problem with a chain of lattices
+# this is a 3D problem.
+function initialize_chained_lattice_problem(num_lats, pts_dim; directed=true)
+
+    num_pts = int(num_lats*pts_dim^2)
+    G = simple_graph(num_pts);
+    G.is_directed = directed;
+
+    edge_index = 0;
+    node_index = 0;
+    locs = linspace(0,1,pts_dim);
+    locations = zeros(num_pts,3);
+    
+    
+    for l = 1:num_lats
+        # switch directions on alternating lattices
+        switch = (mod(l,2)==0)
+        for i = 1:pts_dim
+            for j = 1:pts_dim
+                node_index +=1
+                locations[node_index,:] = [locs[i] locs[j] (l-1)/pts_dim];
+                if(j < pts_dim)
+                    edge_index+=1;
+                    if(switch)
+                        add_edge!(G, Edge(edge_index, node_index+1, node_index))
+                    else
+                        add_edge!(G, Edge(edge_index, node_index, node_index+1))
+                    end
+                end
+                if(i < pts_dim)
+                    edge_index+=1;
+                    if(switch)
+                        add_edge!(G, Edge(edge_index, node_index+pts_dim, node_index))
+                    else
+                        add_edge!(G, Edge(edge_index, node_index, node_index+pts_dim))
+                    end
+                end
+                # connect vertically, alternating corners
+                if(l > 1)
+                    if(mod(l,2)==0 && j==pts_dim && i==pts_dim) # Finished even layer, connect up
+                        edge_index+=1
+                        add_edge!(G, Edge(edge_index, node_index-int(pts_dim^2), node_index))
+                    end
+                    if(mod(l,2)==1 && j==1 && i==1) # Starting odd layer, connect up
+                        edge_index+=1
+                        add_edge!(G, Edge(edge_index, node_index-int(pts_dim^2), node_index))
+                    end
+                end
+            end
+        end
+    end
+
+    # Budget doesn't really matter for a lattice problem.
+    B = 2.19999;
+    B = 3.0
+    distances = 2*B*ones(num_pts,num_pts);
+    for E in G.edges
+        distances[E.source, E.target] = norm(locations[E.source,:] - locations[E.target,:]);
+        if(!G.is_directed)
+            distances[E.target,E.source] = distances[E.source, E.target]
+        end
+    end
+
+    # Traverse diagonally
+    n_s = 1;
+    n_t = num_pts;
+    # Initialize prior
+    prior = GPR.GaussianProcess( 0.1, GPR.SquaredExponential(1/pts_dim,1.0))
+
+    if( GPR.covar(prior.kernel, 0., 1/(pts_dim-1)) > 0.9)
+        warn("Likely unstable covariance matrix: Try adjusting the bandwidth to be smaller");
+    end
+
+    weights = zeros(num_pts);
+
+    return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, directed)
+end
+
+
+
 function initialize_trench_problem(width, pts_dim; directed=true)
 
     num_pts = int(pts_dim*width)
@@ -189,6 +270,8 @@ function initialize_trench_problem(width, pts_dim; directed=true)
 
     return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, directed)
 end
+
+
    
 # Loads wind data from datafile.csv
 function initialize_wind_problem(datafile)
@@ -235,3 +318,20 @@ function initialize_wind_problem(datafile)
     return BanditProblem(G, locations, distances, prior, weights, B, n_s, n_t, true)
 end
 
+function plot_chain_problem(n1,n2)
+    problem = initialize_chained_lattice_problem(n1,n2)
+    N = length(problem.weights)
+    figure(1); clf()
+subplot(1,2,1)
+    scatter3D(problem.locations[:,1],problem.locations[:,2],problem.locations[:,3])
+    arrow_tip = zeros(1,3)
+    arrow_dir = zeros(1,3)
+
+    for edge in problem.G.edges
+        arrow_tip = [arrow_tip; problem.locations[edge.target,:]]
+        dir = problem.locations[edge.target,:]-problem.locations[edge.source,:]
+        arrow_dir = [arrow_dir; dir./norm(dir)]
+        plot([problem.locations[edge.target,1],problem.locations[edge.source,1]], [problem.locations[edge.target,2],problem.locations[edge.source,2]], [problem.locations[edge.target,3],problem.locations[edge.source,3]],color=:red)
+#        plot([problem.locations[edge.target,1],0.03+problem.locations[edge.source,1]], [problem.locations[edge.target,2],0.03+problem.locations[edge.source,2]], [problem.locations[edge.target,3],0.03+problem.locations[edge.source,3]],color=:red,linestyle=":")
+    end
+end

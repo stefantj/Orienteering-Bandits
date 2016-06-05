@@ -7,7 +7,8 @@
 function CombLinTS(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
     reward = zeros(T)
-    posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
+    dim = size(problem.locations,2)
+    posterior = GPR.GaussianProcessEstimate(problem.prior, dim);
     x = nothing
     u = nothing
     for t = 1:T
@@ -31,9 +32,9 @@ function CombLinTS(problem::BanditProblem, T::Int64)
         end
         reward[t] = sum(problem.weights[path])
         t2 = toq()
-        if( mod(t-1,10)==0)
+        if(mod(t-1,10)==0)
             r = reward[t]
-#            println("TS($r) $t")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
+            println("TS($r) $t")#t): TS = ", t0+t1+t2, "R = ", reward[t])#T1 = $t1, T2 = $t2")
         end
     end
     return reward
@@ -45,7 +46,8 @@ end
 # Runs the bandit algorithm over a single instance of a problem. Returns the averaged regret over T trials.
 function CombLinUCB(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
-    posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
+    dim = size(problem.locations,2)
+    posterior = GPR.GaussianProcessEstimate(problem.prior, dim);
     reward = zeros(T)
     x = nothing
     u = nothing
@@ -85,7 +87,8 @@ end
 # 2) The coefficients are expanded to account for delayed feedback
 function CombGPUCB(problem::BanditProblem, T::Int64)
     N = length(problem.G.vertices)
-    posterior = GPR.GaussianProcessEstimate(problem.prior, 2);
+    dim = size(problem.locations,2)
+    posterior = GPR.GaussianProcessEstimate(problem.prior, dim);
     reward = zeros(T)
     information = 0
     C = log(2*sqrt(N) + 1)^3; # This is the maximum information that can be accumulated.  
@@ -127,7 +130,8 @@ end
 function SeqCombGPUCB(problem::BanditProblem, T::Int64)
     # Extract problem data:
     N = length(problem.G.vertices)
-    posterior = GPR.GaussianProcessEstimate(problem.prior, 2)
+    dim = size(problem.locations,2)
+    posterior = GPR.GaussianProcessEstimate(problem.prior, dim)
     reward = zeros(T)
     information = 0;
     C = .3;
@@ -158,7 +162,6 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
                 if(information > C)
                     information = 0
                 end
-                #print(".")
 
                 # Plan action:
                 beta_tk = (e^C)*sqrt(2*log( (t^2) * N * (pi^2) / (6*delta)))
@@ -200,7 +203,7 @@ function SeqCombGPUCB(problem::BanditProblem, T::Int64)
         reward[t] = sum(problem.weights[path_taken]);
         r = reward[t]
         if(mod(t-1,10)==0)
-#            println("\nSeq($r) $t")#: T = $t0, R = ", reward[t], ", ",posterior.numcenters)
+            println("\nSeq($r) $t")#: T = $t0, R = ", reward[t], ", ",posterior.numcenters)
         end
     end
 
